@@ -67,13 +67,19 @@ Normalize only characters unsafe for a directory name: replace runs outside lett
 
 Choose the category using the definitions above without asking the user unless the conversation genuinely contains multiple independent solutions that require separate documents.
 
-Derive a concise kebab-case topic slug from the problem or solution. Use:
+Derive a concise kebab-case topic slug from the problem or solution. Use this filename pattern:
 
 ```text
-YYYY-MM-DD-<topic-slug>.md
+<YYYY-MM-dd-topic>.md
 ```
 
-Use the local calendar date. Keep the slug specific enough to distinguish the proposal from other work in the same project.
+`YYYY` is the four-digit year, `MM` is the two-digit month, `dd` is the two-digit day, and `topic` is the kebab-case topic slug. The angle brackets describe the pattern and are not part of the filename. For example:
+
+```text
+2026-08-12-persist-diagnostic-session.md
+```
+
+Use the local calendar date. Keep the topic specific enough to distinguish the proposal from other work in the same project.
 
 Never overwrite an existing proposal silently. If the path exists, add `-2`, `-3`, and so on before `.md`, unless the user explicitly requested updating a particular existing spec.
 
