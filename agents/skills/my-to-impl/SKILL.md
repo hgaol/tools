@@ -1,6 +1,6 @@
 ---
 name: my-to-impl
-description: Transition one local project specification from ~/.agents/notes/<project-name>/proposed into implementation and begin implementing it. Always decide explicitly whether to work in the current checkout or create a dedicated Git worktree; when requested, use Herdr to create the worktree, launch a fresh Pi agent, and start implementation there.
+description: Transition one local project specification from ~/.agents/notes/<project-name>/proposed into implementation and begin implementing it. Reuse the current checkout when already inside a Herdr-managed Git worktree; otherwise ask whether to stay in the current checkout or have Herdr create a dedicated worktree and launch a fresh Pi implementation agent there.
 disable-model-invocation: true
 ---
 
@@ -63,9 +63,42 @@ If an unresolved question prevents safe implementation, ask for that decision be
 
 Do not rewrite the proposal into a new plan or silently broaden scope.
 
-### 3. Ask about worktree placement
+### 3. Detect an existing Herdr worktree before asking
 
-Always ask this explicit question unless the user's invocation already answered it unambiguously:
+First determine whether the current Pi agent is already running in a Herdr-managed linked Git worktree.
+
+Check `HERDR_ENV` first:
+
+```bash
+test "${HERDR_ENV:-}" = 1
+```
+
+If it is not `1`, skip Herdr inspection and treat the current checkout as not being a Herdr worktree. If it is `1`, learn the installed CLI syntax before inspecting the caller pane:
+
+```bash
+herdr --help
+herdr pane
+herdr pane current --current
+```
+
+Then inspect Git worktree identity:
+
+```bash
+git rev-parse --show-toplevel
+git rev-parse --absolute-git-dir
+git rev-parse --path-format=absolute --git-common-dir
+```
+
+Treat the current checkout as an existing Herdr worktree when:
+
+- `HERDR_ENV=1`,
+- the current Herdr pane's working directory is inside the resolved repository root,
+- the repository corresponds to `<project-name>`, and
+- the absolute Git directory differs from the absolute common Git directory, identifying a linked worktree rather than the primary checkout.
+
+When these conditions hold, **reuse the current worktree**. Do not ask to create another one, do not call `herdr worktree create`, and do not launch a second Pi agent. Continue through the Current-Checkout Path below and note in the completion report that an existing Herdr worktree was reused.
+
+If the current checkout is not an existing Herdr worktree, ask this explicit question unless the user's invocation already answered it unambiguously:
 
 ```text
 Create a dedicated Herdr worktree for this implementation? (yes/no)
@@ -75,7 +108,7 @@ Do not move the spec until this placement decision and any required branch decis
 
 ## Current-Checkout Path
 
-Use this path when the answer is no.
+Use this path when the answer is no **or when step 3 detected an existing Herdr worktree**.
 
 ### 4A. Verify the current checkout
 
@@ -86,6 +119,8 @@ git branch --show-current
 git rev-parse HEAD
 git status --short
 ```
+
+If an existing Herdr worktree was detected, also confirm it is on the intended implementation branch. If it is detached, on `main`/`master`, or on an unrelated branch, report that and ask for confirmation or a branch decision instead of creating another worktree automatically.
 
 If the working tree is dirty, report the changes and ask for confirmation before mixing this implementation with them. Never stash, reset, clean, commit, or discard existing changes automatically.
 
@@ -229,6 +264,7 @@ For current-checkout implementation, report:
 - source and destination spec paths,
 - category and title,
 - branch and starting commit,
+- whether an existing Herdr worktree was detected and reused,
 - whether implementation actually began, and
 - blockers or assumption changes.
 
@@ -247,5 +283,6 @@ For Herdr implementation, additionally report:
 - Never overwrite a lifecycle destination.
 - Never leave frontmatter status intentionally inconsistent with its lifecycle directory.
 - Never claim a worktree contains uncommitted changes from another checkout.
+- Never create a second worktree when the current Pi agent is already in a suitable Herdr-managed linked worktree.
 - Never force-create or force-remove a branch or worktree.
 - Never delete a worktree or agent to hide a partial failure.
