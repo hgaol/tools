@@ -1,27 +1,40 @@
 ---
 name: my-to-impl
-description: Transition one local project specification from ~/.agents/notes/<project-name>/proposed into implementation and begin implementing it. Reuse the current checkout when already inside a Herdr-managed Git worktree; otherwise ask whether to stay in the current checkout or have Herdr create a dedicated worktree and launch a fresh Pi implementation agent there.
+description: Transition one local project specification from ~/.agents/notes/<project-name>/proposed into implementation and begin implementing it. Dynamically choose between continuing in the current Pi session or creating a Herdr Git worktree and launching a new Pi session forked from the current one. Reuse the current session when it is already in a suitable Herdr worktree.
+argument-hint: "[mode=current|worktree] [branch=<branch>] [base=<ref>] [focus=true|false]"
 disable-model-invocation: true
 ---
 
 # My To Impl
 
-Promote exactly one proposed spec into active implementation, then start the implementation rather than stopping after the file move.
+Promote exactly one proposed spec into active implementation, then start implementation either in this Pi session or in a new forked Pi session inside a Herdr worktree.
 
-The spec lifecycle is:
+The spec lifecycle transition is:
 
 ```text
 ~/.agents/notes/<project-name>/proposed/<category>/<filename>.md
   -> ~/.agents/notes/<project-name>/implementation/<category>/<filename>.md
 ```
 
-`<category>` must remain one of `architecture`, `bug-fix`, `feature`, or `chore`. Preserve the category and filename during the move.
+`<category>` remains one of `architecture`, `bug-fix`, `feature`, or `chore`. Preserve the category and filename.
+
+## Dynamic Parameters
+
+Accept these optional arguments when the user supplies them:
+
+- `mode=current` — move the spec and implement in this Pi session and checkout.
+- `mode=worktree` — create a Herdr worktree and start implementation in a new Pi session forked from this session.
+- `branch=<branch>` — required for `mode=worktree`; ask when omitted.
+- `base=<ref>` — optional worktree base; default to the exact current `HEAD` commit.
+- `focus=true|false` — whether to focus the new Herdr agent; default `false`.
+
+Natural-language equivalents are valid. Reject unknown or contradictory values rather than guessing. Arguments settle questions they answer explicitly; ask only for missing decisions.
 
 ## Process
 
 ### 1. Resolve the project and proposed spec
 
-Derive `<project-name>` the same way across normal checkouts and Git worktrees:
+Derive `<project-name>` consistently across normal checkouts and Git worktrees:
 
 1. Prefer the repository name from `git remote get-url origin`, stripping the path and trailing `.git`.
 2. Otherwise use the Git repository root basename.
@@ -34,9 +47,9 @@ List Markdown files under:
 ~/.agents/notes/<project-name>/proposed/{architecture,bug-fix,feature,chore}/
 ```
 
-If the user supplied a path, filename, or topic as an argument, use it to select a unique file. If exactly one proposal exists, select it. If several match, show a concise numbered list containing title, category, and filename, then ask the user to choose. If none exist, stop without creating an empty implementation directory.
+If the user supplied a path, filename, or topic, use it to select a unique file. If exactly one proposal exists, select it. If several match, show a concise numbered list with title, category, and filename, then ask the user to choose. If none exist, stop without creating an implementation directory.
 
-Resolve the absolute source path and verify that it is contained under the expected project `proposed` directory. Read the entire document before continuing.
+Resolve the absolute source path and verify it is contained under the expected project `proposed` directory. Read the entire document.
 
 Require frontmatter containing:
 
@@ -46,26 +59,21 @@ category: <category>
 project: <project-name>
 ```
 
-The frontmatter category must match the source parent directory. If metadata or location is inconsistent, stop and ask whether to repair it; do not guess which state is authoritative.
+The category must match the source parent directory. If metadata and location disagree, stop and ask whether to repair them; do not guess which is authoritative.
 
 ### 2. Check implementation readiness
 
 Summarize:
 
-- proposal title,
-- intended outcome,
+- proposal title and intended outcome,
 - acceptance criteria,
 - testing decisions,
 - unresolved questions or assumptions, and
 - relevant out-of-scope boundaries.
 
-If an unresolved question prevents safe implementation, ask for that decision before moving the spec. Non-blocking risks can remain recorded in the spec.
+If an unresolved question prevents safe implementation, ask for that decision before moving the spec. Keep non-blocking risks in the document. Do not rewrite the proposal into a different plan or silently broaden scope.
 
-Do not rewrite the proposal into a new plan or silently broaden scope.
-
-### 3. Detect an existing Herdr worktree before asking
-
-First determine whether the current Pi agent is already running in a Herdr-managed linked Git worktree.
+### 3. Detect whether this session is already in a Herdr worktree
 
 Check `HERDR_ENV` first:
 
@@ -73,7 +81,7 @@ Check `HERDR_ENV` first:
 test "${HERDR_ENV:-}" = 1
 ```
 
-If it is not `1`, skip Herdr inspection and treat the current checkout as not being a Herdr worktree. If it is `1`, learn the installed CLI syntax before inspecting the caller pane:
+If it is `1`, learn the installed Herdr CLI before inspecting the current pane:
 
 ```bash
 herdr --help
@@ -81,36 +89,49 @@ herdr pane
 herdr pane current --current
 ```
 
-Then inspect Git worktree identity:
+Inspect Git identity:
 
 ```bash
 git rev-parse --show-toplevel
 git rev-parse --absolute-git-dir
 git rev-parse --path-format=absolute --git-common-dir
+git branch --show-current
+git rev-parse HEAD
+git status --short
 ```
 
-Treat the current checkout as an existing Herdr worktree when:
+Treat this as an existing Herdr worktree when:
 
 - `HERDR_ENV=1`,
-- the current Herdr pane's working directory is inside the resolved repository root,
+- the current Herdr pane is inside the resolved repository root,
 - the repository corresponds to `<project-name>`, and
-- the absolute Git directory differs from the absolute common Git directory, identifying a linked worktree rather than the primary checkout.
+- the absolute Git directory differs from the absolute common Git directory, identifying a linked worktree.
 
-When these conditions hold, **reuse the current worktree**. Do not ask to create another one, do not call `herdr worktree create`, and do not launch a second Pi agent. Continue through the Current-Checkout Path below and note in the completion report that an existing Herdr worktree was reused.
+A suitable existing worktree must also be on the intended implementation branch rather than detached, `main`, `master`, or an unrelated branch.
 
-If the current checkout is not an existing Herdr worktree, ask this explicit question unless the user's invocation already answered it unambiguously:
+When a suitable existing Herdr worktree is detected and no mode was supplied, ask only:
 
 ```text
-Create a dedicated Herdr worktree for this implementation? (yes/no)
+This session is already in Herdr worktree <path> on <branch>. Start implementation in this session? (yes/no)
 ```
 
-Do not move the spec until this placement decision and any required branch decision are settled.
+On yes, resolve to `mode=current`. On no, stop and ask what placement the user wants; do not create another worktree automatically. If the user explicitly requested `mode=worktree` despite already being in a suitable Herdr worktree, explain that another worktree is normally unnecessary and require confirmation before creating it.
 
-## Current-Checkout Path
+### 4. Resolve implementation mode
 
-Use this path when the answer is no **or when step 3 detected an existing Herdr worktree**.
+If mode remains unspecified and this session is not already in a suitable Herdr worktree, ask:
 
-### 4A. Verify the current checkout
+```text
+Where should implementation start?
+1. This Pi session and current checkout
+2. A new Herdr worktree with a forked Pi session
+```
+
+Do not move the spec until mode and all mode-specific blocking decisions are settled.
+
+## Mode: Current Session
+
+### 5A. Verify the current checkout
 
 Confirm the current repository corresponds to `<project-name>`, then inspect:
 
@@ -120,11 +141,11 @@ git rev-parse HEAD
 git status --short
 ```
 
-If an existing Herdr worktree was detected, also confirm it is on the intended implementation branch. If it is detached, on `main`/`master`, or on an unrelated branch, report that and ask for confirmation or a branch decision instead of creating another worktree automatically.
+If the branch is detached, `main`, `master`, or unrelated to the proposal, report it and ask for confirmation or a branch decision. Do not create a worktree unless the user changes the mode to `worktree`.
 
 If the working tree is dirty, report the changes and ask for confirmation before mixing this implementation with them. Never stash, reset, clean, commit, or discard existing changes automatically.
 
-### 5A. Move the spec transactionally
+### 6A. Move the spec transactionally
 
 Compute:
 
@@ -133,7 +154,7 @@ source:      ~/.agents/notes/<project-name>/proposed/<category>/<filename>.md
 destination: ~/.agents/notes/<project-name>/implementation/<category>/<filename>.md
 ```
 
-If the destination already exists, stop. Do not overwrite, merge, rename, or create a numbered duplicate automatically; the collision may mean implementation already started.
+If the destination exists, stop. Do not overwrite, merge, rename, or create a numbered duplicate; the collision may mean implementation already started.
 
 Create only the destination category directory, move the file, then change exactly:
 
@@ -147,29 +168,27 @@ to:
 status: implementation
 ```
 
-If the status update fails, immediately move the file back to its original proposed path and report the failure. Preserve all other content and the original filename.
+If the status update fails, immediately move the file back to its proposed path and report the failure. Preserve all other content and the filename.
 
-### 6A. Start implementation in the current agent
+### 7A. Start implementation in this session
 
-Load and follow the available `implement` skill using the absolute implementation spec path as its input. If that skill is unavailable, follow this minimum contract:
+Load and follow the available `implement` skill with the absolute implementation spec path as its input. If it is unavailable, follow this minimum contract:
 
-1. Re-read the implementation spec from its new path.
-2. Inspect the current code and verify the spec's assumptions.
+1. Re-read the moved spec.
+2. Inspect the current code and revalidate the spec's assumptions.
 3. Stop and report if the code invalidates a core decision.
 4. Implement only the stated scope.
 5. Use test-driven development at the agreed seams where practical.
-6. Run focused tests and typechecking regularly, then the full relevant suite at the end.
+6. Run focused tests and typechecking regularly, then the full relevant suite.
 7. Review the final diff against every acceptance criterion.
 8. Run the available code-review workflow.
-9. Commit only the implementation changes when the user has authorized commits or the loaded implementation workflow requires one.
+9. Commit only when authorized or required by the loaded implementation workflow.
 
-Do not end the turn after moving the spec; begin implementation.
+Do not end the turn after moving the spec; begin implementation in the current Pi session.
 
-## Herdr Worktree Path
+## Mode: New Herdr Worktree and Forked Pi Session
 
-Use this path when the answer is yes.
-
-### 4B. Verify Herdr and Git
+### 5B. Validate prerequisites
 
 Before any Herdr control command:
 
@@ -177,9 +196,17 @@ Before any Herdr control command:
 test "${HERDR_ENV:-}" = 1
 ```
 
-If this fails, explain that a Herdr worktree cannot be controlled from outside a Herdr-managed pane and stop with the spec still in `proposed`.
+If it fails, explain that a Herdr worktree cannot be controlled from outside Herdr and stop with the spec still in `proposed`.
 
-The installed Herdr CLI is authoritative. Inspect it before mutation:
+This mode requires a persisted source Pi session:
+
+```bash
+test -n "${PI_SESSION_FILE:-}" && test -f "$PI_SESSION_FILE"
+```
+
+If unavailable, stop. Do not synthesize or copy session JSONL manually.
+
+Learn current command syntax:
 
 ```bash
 herdr --help
@@ -189,7 +216,7 @@ herdr agent
 
 Do not run bare `herdr`; it launches or attaches the TUI.
 
-Record the repository root, current branch, exact `HEAD`, status, and existing worktrees:
+Record the repository boundary and existing topology:
 
 ```bash
 git rev-parse --show-toplevel
@@ -201,88 +228,110 @@ herdr worktree list --cwd <repo-root>
 herdr agent list
 ```
 
-A new worktree does not inherit uncommitted changes. If the source checkout is dirty, report that fact and ask whether branching from clean `HEAD` is correct. Never transfer dirty changes without an explicit user-approved method.
+A new worktree does not inherit uncommitted changes. If the source checkout is dirty, report the changed paths and ask whether branching from clean `HEAD` is correct. Never transfer dirty changes without an explicit user-approved method.
 
-Ask for or confirm:
+### 6B. Require branch and infer the worktree name
 
-- feature branch name,
-- base ref, defaulting to the exact recorded `HEAD` commit,
-- optional worktree path, and
-- whether the new agent should remain in the background or receive focus.
+`branch=<branch>` is required. Ask for it if omitted; do not invent the branch from the spec because repositories have different naming policies.
 
-Suggest a branch derived from the spec topic, but respect repository branch conventions and do not create it until confirmed. Derive a short unique Herdr agent name matching `[a-z][a-z0-9_-]{0,31}`.
+Infer the worktree name from the final non-empty slash-delimited branch segment:
 
-### 5B. Create the worktree and Pi agent
+```text
+feat/xxx   -> xxx
+fix/xxx    -> xxx
+u/name/xxx -> xxx
+xxx        -> xxx
+```
 
-If the branch or path already exists, do not overwrite or remove it. Ask whether to open the existing worktree, choose another location, or cancel.
+Do not ask separately for a worktree name. Normalize the inferred name for display and Herdr identifiers by replacing unsupported characters with `-` and trimming separators.
 
-Create the worktree without stealing focus by default:
+Use the inferred name as the Herdr workspace label. Derive a unique agent name such as `impl-<worktree-name>`, lowercase, matching `[a-z][a-z0-9_-]{0,31}`; truncate safely and resolve collisions using `herdr agent list`.
+
+Default the base to the exact recorded source `HEAD`. If `base=<ref>` was supplied, resolve it to a commit before creating anything and report when it differs from the diagnosed/current commit.
+
+If the requested branch or corresponding worktree already exists, do not overwrite or remove it. Ask whether to open the existing worktree, choose another branch, or cancel.
+
+### 7B. Create the Herdr worktree
+
+Keep focus unchanged unless `focus=true`:
 
 ```bash
 herdr worktree create \
   --cwd <repo-root> \
-  --branch <feature-branch> \
-  --base <exact-base-commit> \
-  --label <feature-branch> \
+  --branch <branch> \
+  --base <resolved-base-commit> \
+  --label <inferred-worktree-name> \
   --no-focus
 ```
 
-Add `--path <requested-path>` only when explicitly selected. Parse the actual worktree path, workspace ID, tab ID, and root pane ID from the JSON response; never predict identifiers.
+Do not require a separate filesystem path. Let Herdr infer its managed worktree path from the repository and branch unless the user explicitly supplies a path.
 
-Verify the returned root pane is an available shell, then start a fresh Pi agent there:
+Parse the actual worktree path, workspace ID, tab ID, and root pane ID from the JSON response. IDs are opaque; never predict them.
+
+### 8B. Start a new Pi session by forking this session
+
+Verify the returned root pane is an available shell, then pass Pi's native `--fork` argument through Herdr:
 
 ```bash
-herdr agent start <agent-name> --kind pi --pane <root-pane-id>
+herdr agent start <agent-name> \
+  --kind pi \
+  --pane <root-pane-id> \
+  -- \
+  --fork <absolute-PI_SESSION_FILE>
 ```
 
-`agent start` does not create layout. If worktree creation or agent startup fails, leave the spec in `proposed`, preserve any worktree that was created, and report recovery details rather than deleting anything.
+This must be a Pi session fork, not a fresh unrelated Pi session. The fork preserves conversation context while setting the new session's `cwd` to the target worktree.
 
-### 6B. Move the spec and start remote implementation
+If worktree creation or agent startup fails, leave the spec in `proposed`, preserve any worktree that was created, and report recovery details rather than deleting anything.
 
-Only after the target Pi agent starts successfully, move the spec from `proposed/<category>` to `implementation/<category>` using the transactional status-update rules from step 5A.
+### 9B. Move the spec and start implementation in the forked session
 
-Then submit this through the Herdr agent surface without waiting unless the user asked to wait:
+Only after the forked Pi agent starts successfully, move the spec to `implementation/<category>` and update its status using the transactional rules from step 6A.
+
+Submit a prompt that starts with the skill command so Pi expands it, followed by the worktree-specific instructions as arguments:
 
 ```text
 /skill:implement <absolute-implementation-spec-path>
+
+This session was forked into a new implementation worktree. Confirm pwd,
+branch, HEAD, and git status; re-read the spec and verify its assumptions
+before editing. Stop and report if the target code invalidates a core decision.
 ```
 
-Use:
+Send the complete text as one `herdr agent prompt` call without waiting unless the user explicitly requested a wait. If prompt submission fails, keep the spec in `implementation` because the worktree and forked agent exist; report the exact recovery prompt.
 
-```bash
-herdr agent prompt <agent-name> "/skill:implement <absolute-implementation-spec-path>"
-```
-
-If prompt submission fails, keep the spec in `implementation` because the worktree and implementation agent exist; report the exact recovery command. Inspect blocked or unknown states with `herdr agent get` and `herdr agent read` before sending further input.
-
-Focus the target only if requested. Do not close the source pane or any created workspace.
+If `focus=true`, focus the target agent after successful prompt submission. Otherwise keep it in the background. Do not close the source pane or session.
 
 ## Completion Report
 
-For current-checkout implementation, report:
+Always report:
 
+- selected mode (`current` or `worktree`),
 - source and destination spec paths,
 - category and title,
 - branch and starting commit,
-- whether an existing Herdr worktree was detected and reused,
 - whether implementation actually began, and
-- blockers or assumption changes.
+- blockers or changed assumptions.
 
-For Herdr implementation, additionally report:
+For an existing Herdr worktree reused in current mode, report its path and that no new worktree or session was created.
 
-- target branch and worktree path,
+For new worktree mode, additionally report:
+
+- requested branch and inferred worktree name,
+- actual target worktree path,
 - Herdr workspace/tab/pane IDs,
-- target agent name and observed state,
+- forked Pi agent name and observed state,
+- source Pi session path or ID,
 - whether the implementation prompt was accepted, and
 - any dirty-state or stale-base warning.
 
 ## Safety Rules
 
 - Transition exactly one spec per invocation.
-- Never move a spec before placement and blocking decisions are settled.
+- Never move a spec before mode and blocking decisions are settled.
 - Never overwrite a lifecycle destination.
 - Never leave frontmatter status intentionally inconsistent with its lifecycle directory.
-- Never claim a worktree contains uncommitted changes from another checkout.
-- Never create a second worktree when the current Pi agent is already in a suitable Herdr-managed linked worktree.
+- Never claim a new worktree contains uncommitted changes from the source checkout.
+- Never create a second worktree when the current Pi session is already in a suitable Herdr worktree unless the user explicitly confirms it.
 - Never force-create or force-remove a branch or worktree.
-- Never delete a worktree or agent to hide a partial failure.
+- Never delete a worktree, pane, session, or agent to hide a partial failure.
