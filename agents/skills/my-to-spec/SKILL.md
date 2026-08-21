@@ -1,6 +1,6 @@
 ---
 name: my-to-spec
-description: Synthesize the solution already developed in the current conversation into a durable proposed Markdown specification under ~/.agents/notes/<project-name>/proposed. Use when the user wants to capture an agreed architecture change, bug fix, feature, or chore as a local spec without publishing to an issue tracker or interviewing them again.
+description: Synthesize the solution already developed in the current conversation into a durable proposed Markdown specification under <notes-root>/<project-name>/proposed, where <notes-root> is $AGENTS_MY_NOTES when set and valid and ~/.agents/notes otherwise. Use when the user wants to capture an agreed architecture change, bug fix, feature, or chore as a local spec without publishing to an issue tracker or interviewing them again.
 disable-model-invocation: true
 ---
 
@@ -10,12 +10,36 @@ Turn the current conversation and existing codebase understanding into one propo
 
 This skill writes documentation only. Do not implement the solution, modify the repository, create tickets, or publish to an issue tracker.
 
+## Notes Root
+
+All note paths in this skill are relative to `<notes-root>`.
+
+Resolve `<notes-root>` before touching the filesystem:
+
+1. Read `AGENTS_MY_NOTES` from the environment.
+2. Use it when valid; otherwise use the default `~/.agents/notes`.
+
+```bash
+printf '%s\n' "${AGENTS_MY_NOTES:-}"
+```
+
+`AGENTS_MY_NOTES` is valid only when, after trimming surrounding whitespace, it:
+
+- is non-empty,
+- is absolute after expanding a leading `~/`, rejecting relative paths and bare `~user` forms,
+- contains no unexpanded variable reference or command substitution, and
+- either already exists as a directory, or does not exist while its parent directory exists so a single directory can be created.
+
+If the value is set but invalid, report the exact value and the reason once, then fall back to `~/.agents/notes`. Never create a nested directory tree to satisfy a malformed value, and never write outside the resolved root.
+
+Use one resolved root for the entire invocation and report absolute paths.
+
 ## Output Location
 
 Write exactly one Markdown file under:
 
 ```text
-~/.agents/notes/<project-name>/proposed/<category>/<filename>.md
+<notes-root>/<project-name>/proposed/<category>/<filename>.md
 ```
 
 Choose one category:
@@ -176,6 +200,7 @@ Check that the document:
 - contains testable acceptance criteria,
 - does not invent requirements,
 - does not expose secrets, credentials, private tokens, or unnecessary personal information,
+- lives inside the resolved `<notes-root>`,
 - avoids transient implementation detail unless it encodes an important decision, and
 - stands alone for a future reader who does not have the conversation.
 

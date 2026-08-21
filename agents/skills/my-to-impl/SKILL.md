@@ -1,6 +1,6 @@
 ---
 name: my-to-impl
-description: Transition one local project specification from ~/.agents/notes/<project-name>/proposed into implementation and begin implementing it. Dynamically choose between continuing in the current Pi session or creating a Herdr Git worktree and launching a new Pi session forked from the current one. Reuse the current session when it is already in a suitable Herdr worktree.
+description: Transition one local project specification from <notes-root>/<project-name>/proposed into implementation and begin implementing it, where <notes-root> is $AGENTS_MY_NOTES when set and valid and ~/.agents/notes otherwise. Dynamically choose between continuing in the current Pi session or creating a Herdr Git worktree and launching a new Pi session forked from the current one. Reuse the current session when it is already in a suitable Herdr worktree.
 argument-hint: "[mode=current|worktree] [branch=<branch>] [base=<ref>] [focus=true|false]"
 disable-model-invocation: true
 ---
@@ -12,11 +12,35 @@ Promote exactly one proposed spec into active implementation, then start impleme
 The spec lifecycle transition is:
 
 ```text
-~/.agents/notes/<project-name>/proposed/<category>/<filename>.md
-  -> ~/.agents/notes/<project-name>/implementation/<category>/<filename>.md
+<notes-root>/<project-name>/proposed/<category>/<filename>.md
+  -> <notes-root>/<project-name>/implementation/<category>/<filename>.md
 ```
 
 `<category>` remains one of `architecture`, `bug-fix`, `feature`, or `chore`. Preserve the category and filename.
+
+## Notes Root
+
+All note paths in this skill are relative to `<notes-root>`.
+
+Resolve `<notes-root>` before touching the filesystem:
+
+1. Read `AGENTS_MY_NOTES` from the environment.
+2. Use it when valid; otherwise use the default `~/.agents/notes`.
+
+```bash
+printf '%s\n' "${AGENTS_MY_NOTES:-}"
+```
+
+`AGENTS_MY_NOTES` is valid only when, after trimming surrounding whitespace, it:
+
+- is non-empty,
+- is absolute after expanding a leading `~/`, rejecting relative paths and bare `~user` forms,
+- contains no unexpanded variable reference or command substitution, and
+- either already exists as a directory, or does not exist while its parent directory exists so a single directory can be created.
+
+If the value is set but invalid, report the exact value and the reason once, then fall back to `~/.agents/notes`. Never create a nested directory tree to satisfy a malformed value, and never write outside the resolved root.
+
+Resolve the root once and use it for both the source and the destination of the move. Never move a spec across roots. Resolve the root in this session even when implementation continues in a forked session, and pass the absolute spec path to that session rather than an environment-dependent pattern.
 
 ## Dynamic Parameters
 
@@ -44,7 +68,7 @@ Derive `<project-name>` consistently across normal checkouts and Git worktrees:
 List Markdown files under:
 
 ```text
-~/.agents/notes/<project-name>/proposed/{architecture,bug-fix,feature,chore}/
+<notes-root>/<project-name>/proposed/{architecture,bug-fix,feature,chore}/
 ```
 
 If the user supplied a path, filename, or topic, use it to select a unique file. If exactly one proposal exists, select it. If several match, show a concise numbered list with title, category, and filename, then ask the user to choose. If none exist, stop without creating an implementation directory.
@@ -150,8 +174,8 @@ If the working tree is dirty, report the changes and ask for confirmation before
 Compute:
 
 ```text
-source:      ~/.agents/notes/<project-name>/proposed/<category>/<filename>.md
-destination: ~/.agents/notes/<project-name>/implementation/<category>/<filename>.md
+source:      <notes-root>/<project-name>/proposed/<category>/<filename>.md
+destination: <notes-root>/<project-name>/implementation/<category>/<filename>.md
 ```
 
 If the destination exists, stop. Do not overwrite, merge, rename, or create a numbered duplicate; the collision may mean implementation already started.
@@ -328,6 +352,7 @@ For new worktree mode, additionally report:
 ## Safety Rules
 
 - Transition exactly one spec per invocation.
+- Never write outside the resolved `<notes-root>`, and never move a spec between different roots.
 - Never move a spec before mode and blocking decisions are settled.
 - Never overwrite a lifecycle destination.
 - Never leave frontmatter status intentionally inconsistent with its lifecycle directory.

@@ -1,6 +1,6 @@
 ---
 name: my-to-archived
-description: Archive one local project specification by moving it from ~/.agents/notes/<project-name>/implementation to the matching archived category after implementation is complete or the user explicitly chooses to close it. Use when active implementation work should leave the implementation queue while preserving the spec as durable history.
+description: Archive one local project specification by moving it from <notes-root>/<project-name>/implementation to the matching archived category, where <notes-root> is $AGENTS_MY_NOTES when set and valid and ~/.agents/notes otherwise, after implementation is complete or the user explicitly chooses to close it. Use when active implementation work should leave the implementation queue while preserving the spec as durable history.
 disable-model-invocation: true
 ---
 
@@ -11,13 +11,37 @@ Transition exactly one implementation spec into the archived state.
 The lifecycle transition is:
 
 ```text
-~/.agents/notes/<project-name>/implementation/<category>/<filename>.md
-  -> ~/.agents/notes/<project-name>/archived/<category>/<filename>.md
+<notes-root>/<project-name>/implementation/<category>/<filename>.md
+  -> <notes-root>/<project-name>/archived/<category>/<filename>.md
 ```
 
 `<category>` must remain one of `architecture`, `bug-fix`, `feature`, or `chore`. Preserve the category and filename.
 
 This skill archives the spec document only. It does not delete branches or worktrees, stop Herdr agents, merge code, create releases, or modify issue trackers.
+
+## Notes Root
+
+All note paths in this skill are relative to `<notes-root>`.
+
+Resolve `<notes-root>` before touching the filesystem:
+
+1. Read `AGENTS_MY_NOTES` from the environment.
+2. Use it when valid; otherwise use the default `~/.agents/notes`.
+
+```bash
+printf '%s\n' "${AGENTS_MY_NOTES:-}"
+```
+
+`AGENTS_MY_NOTES` is valid only when, after trimming surrounding whitespace, it:
+
+- is non-empty,
+- is absolute after expanding a leading `~/`, rejecting relative paths and bare `~user` forms,
+- contains no unexpanded variable reference or command substitution, and
+- either already exists as a directory, or does not exist while its parent directory exists so a single directory can be created.
+
+If the value is set but invalid, report the exact value and the reason once, then fall back to `~/.agents/notes`. Never create a nested directory tree to satisfy a malformed value, and never write outside the resolved root.
+
+Resolve the root once and use it for both the source and the destination of the move. Never move a spec across roots: if the source was found under one root, the destination must be under the same root.
 
 ## Process
 
@@ -33,7 +57,7 @@ Derive `<project-name>` consistently across checkouts and worktrees:
 List Markdown files under:
 
 ```text
-~/.agents/notes/<project-name>/implementation/{architecture,bug-fix,feature,chore}/
+<notes-root>/<project-name>/implementation/{architecture,bug-fix,feature,chore}/
 ```
 
 If the user supplied a path, filename, or topic as an argument, use it to select a unique file. If exactly one implementation spec exists, select it. If several match, show a concise numbered list containing title, category, and filename, then ask the user to choose. If none exist, stop without creating an empty archive directory.
@@ -69,8 +93,8 @@ Archiving is still allowed for superseded or abandoned work when the user explic
 Compute:
 
 ```text
-source:      ~/.agents/notes/<project-name>/implementation/<category>/<filename>.md
-destination: ~/.agents/notes/<project-name>/archived/<category>/<filename>.md
+source:      <notes-root>/<project-name>/implementation/<category>/<filename>.md
+destination: <notes-root>/<project-name>/archived/<category>/<filename>.md
 ```
 
 If the destination already exists, stop. Do not overwrite, merge, rename, or create a numbered duplicate automatically; the collision may indicate the spec was already archived.
@@ -106,6 +130,7 @@ Do not paste the entire document unless asked.
 ## Safety Rules
 
 - Transition exactly one spec per invocation.
+- Never write outside the resolved `<notes-root>`, and never move a spec between different roots.
 - Never archive active work silently.
 - Never overwrite an existing archived spec.
 - Never leave frontmatter status intentionally inconsistent with its lifecycle directory.
