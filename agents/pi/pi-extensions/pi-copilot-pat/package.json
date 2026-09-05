@@ -1,0 +1,32 @@
+{
+  "name": "pi-copilot-pat",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Use GitHub Copilot from the pi coding agent with a fine-grained personal access token",
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-extension",
+    "github-copilot",
+    "copilot",
+    "personal-access-token"
+  ],
+  "license": "MIT",
+  "files": [
+    "index.ts",
+    "thinking-levels.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --experimental-transform-types --test test/*.test.ts"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.84.2"
+  }
+}
