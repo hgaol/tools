@@ -16,6 +16,12 @@ Use this configuration:
 - Store personal skills under `$skill_path/`.
 - Store personal Pi extensions under `$pi_extension_path/`.
 
+## Git
+
+- Keep commit messages concise.
+- Follow repository-level policy when one exists.
+- Otherwise use the style `feat(scope): description` or `fix(scope): description`.
+
 ## Working Style
 
 - Be concise. Report what changed and where, not how hard it was.
